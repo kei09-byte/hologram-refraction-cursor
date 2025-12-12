@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hologram Refraction Cursor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      /* カラーテーマ（ミニクロック寄り、紫弱め） */
+      --bg-deep: #05060a;
+      --glow-cyan: #5ce1ff;
+      --glow-teal: #35ffc3;
+      --glow-violet: #b38cff;
+      --glow-rose: #ff8fb8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg-deep);
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display",
+        "Helvetica Neue", sans-serif;
+    }
+
+    /* Notion 埋め込み時は iframe の高さ = これの高さになる */
+    .holo-wrapper {
+      position: relative;
+      width: 100vw;
+      height: 100vh; /* Notion 側で高さ 200～260px くらいに設定するとちょうど良い */
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 0% 0%, #0a0c18, #020308 60%);
+    }
+
+    /* ホログラム背景 */
+    .holo-bg {
+      position: absolute;
+      inset: -10%;
+      background-image:
+        radial-gradient(circle at 0% 0%, rgba(92, 225, 255, 0.8), transparent 60%),
+        radial-gradient(circle at 100% 0%, rgba(255, 143, 184, 0.55), transparent 60%),
+        radial-gradient(circle at 10% 100%, rgba(53, 255, 195, 0.6), transparent 55%),
+        radial-gradient(circle at 80% 100%, rgba(179, 140, 255, 0.35), transparent 55%),
+        linear-gradient(120deg, #05060a 0%, #050b12 40%, #070a16 100%);
+      filter: saturate(1.2) brightness(1.1);
+      transform: scale(1.05);
+    }
+
+    /* 上にうっすら載せるノイズ（質感用） */
+    .holo-noise {
+      position: absolute;
+      inset: -20%;
+      background-image: url("data:image/svg+xml,%3Csvg width='160' height='160' viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='3' stitchTiles='noStitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.18'/%3E%3C/svg%3E");
+      mix-blend-mode: soft-light;
+      pointer-events: none;
+    }
+
+    /* レンズ本体 */
+    .holo-lens {
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      overflow: hidden;
+      pointer-events: none;
+      /* 背景は holo-bg と同じパターンを使う（= 屈折感の元） */
+      background-image:
+        radial-gradient(circle at 0% 0%, rgba(92, 225, 255, 0.9), transparent 65%),
+        radial-gradient(circle at 100% 0%, rgba(255, 143, 184, 0.75), transparent 60%),
+        radial-gradient(circle at 10% 100%, rgba(53, 255, 195, 0.8), transparent 60%),
+        radial-gradient(circle at 80% 100%, rgba(179, 140, 255, 0.6), transparent 55%),
+        linear-gradient(120deg, #05060a 0%, #050b12 40%, #070a16 100%);
+      background-size: 200% 200%;
+      background-position: center;
+      /* ガラスっぽさ */
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.14),
+        0 0 25px rgba(111, 255, 255, 0.55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      opacity: 0;
+      transform: translate3d(-50%, -50%, 0) scale(0.9);
+      transition: opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    }
+
+    /* レンズの内側の光（内側グロー） */
+    .holo-lens::before {
+      content: "";
+      position: absolute;
+      inset: 12%;
+      border-radius: inherit;
+      background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.35), transparent 60%),
+        radial-gradient(circle at 70% 80%, rgba(0, 0, 0, 0.35), transparent 60%);
+      mix-blend-mode: screen;
+      opacity: 0.9;
+    }
+
+    /* レンズの表面反射 */
+    .holo-lens::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.55), transparent 55%);
+      mix-blend-mode: screen;
+      opacity: 0.65;
+    }
+
+    /* 中央にうっすらラベル（オプション） */
+    .holo-label {
+      position: absolute;
+      bottom: 14px;
+      right: 20px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(120deg, rgba(10, 14, 24, 0.8), rgba(30, 42, 64, 0.6));
+      color: rgba(255, 255, 255, 0.86);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      pointer-events: none;
+    }
+
+    .holo-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 20%, #5ce1ff, #35ffc3);
+      box-shadow: 0 0 12px rgba(92, 225, 255, 0.9);
+    }
+  </style>
+</head>
+<body>
+  <div class="holo-wrapper">
+    <div class="holo-bg"></div>
+    <div class="holo-noise"></div>
+    <div class="holo-lens"></div>
+
+    <div class="holo-label">
+      <span class="holo-dot"></span>
+      <span>Hologram Refraction Cursor</span>
+    </div>
+  </div>
+
+  <script>
+    const wrapper = document.querySelector(".holo-wrapper");
+    const lens = document.querySelector(".holo-lens");
+
+    let targetX = window.innerWidth / 2;
+    let targetY = window.innerHeight / 2;
+    let currentX = targetX;
+    let currentY = targetY;
+    let isPointerInside = false;
+
+    function updateLens() {
+      const rect = wrapper.getBoundingClientRect();
+
+      // スムーズに追従させる（液体感）
+      const lerpFactor = 0.15;
+      currentX += (targetX - currentX) * lerpFactor;
+      currentY += (targetY - currentY) * lerpFactor;
+
+      const x = currentX - rect.left;
+      const y = currentY - rect.top;
+
+      lens.style.left = x + "px";
+      lens.style.top = y + "px";
+
+      // 背景の「屈折」っぽさ（カーソル位置と逆方向にわずかに動かす）
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const offsetX = (x - centerX) * -0.18;
+      const offsetY = (y - centerY) * -0.18;
+      lens.style.backgroundPosition = `${50 + offsetX / 10}% ${50 + offsetY / 10}%`;
+
+      requestAnimationFrame(updateLens);
+    }
+
+    // ポインタが中に入ったとき
+    wrapper.addEventListener("pointerenter", (e) => {
+      isPointerInside = true;
+      const rect = wrapper.getBoundingClientRect();
+      targetX = e.clientX;
+      targetY = e.clientY;
+
+      lens.style.opacity = "1";
+      lens.style.transform = "translate3d(-50%, -50%, 0) scale(1)";
+    });
+
+    // ポインタが動いたとき
+    wrapper.addEventListener("pointermove", (e) => {
+      const rect = wrapper.getBoundingClientRect();
+      targetX = e.clientX;
+      targetY = e.clientY;
+
+      // モバイルでのタッチ移動にもある程度対応
+      if (!isPointerInside) {
+        isPointerInside = true;
+        lens.style.opacity = "1";
+        lens.style.transform = "translate3d(-50%, -50%, 0) scale(1)";
+      }
+    });
+
+    // 外に出たとき
+    wrapper.addEventListener("pointerleave", () => {
+      isPointerInside = false;
+      lens.style.opacity = "0";
+      lens.style.transform = "translate3d(-50%, -50%, 0) scale(0.9)";
+    });
+
+    // 初期位置は中央
+    window.addEventListener("resize", () => {
+      targetX = window.innerWidth / 2;
+      targetY = window.innerHeight / 2;
+    });
+
+    updateLens();
+  </script>
+</body>
+</html>
